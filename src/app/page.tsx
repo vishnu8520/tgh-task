@@ -1,65 +1,124 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useInView } from "react-intersection-observer";
+
+import { getProducts } from "././lib/api";
+import { useDebounce } from "././/hooks/useDebounce";
+import { Product } from "./types/product";
+import Header from "./components/Header";
+import Toolbar from "./components/Toolbar";
+import ProductSkeleton from "./components/ProductSkeleton";
+import ProductCard from "./components/ProductCard";
+
+const LIMIT = 12;
+
+export default function HomePage() {
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"title" | "price">("title");
+  const [order, setOrder] = useState<"asc" | "desc">("asc");
+
+  const debouncedSearch = useDebounce(search, 500);
+  const { ref, inView } = useInView();
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["products", debouncedSearch, sortBy, order],
+    queryFn: ({ pageParam = 0 }) =>
+      getProducts({
+        limit: LIMIT,
+        skip: pageParam,
+        search: debouncedSearch || undefined,
+        sortBy,
+        order,
+        select: "title,price,thumbnail,description,rating,category",
+      }),
+    getNextPageParam: (lastPage) => {
+      const nextSkip = lastPage.skip + lastPage.limit;
+      return nextSkip < lastPage.total ? nextSkip : undefined;
+    },
+    initialPageParam: 0,
+  });
+
+  useEffect(() => {
+    if (inView && hasNextPage) fetchNextPage();
+  }, [inView, hasNextPage, fetchNextPage]);
+
+  const products: Product[] = data?.pages.flatMap((p) => p.products) ?? [];
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <>
+      {/* Replace logo src with your image path */}
+      <Header
+        search={search}
+        setSearch={setSearch}
+        logoSrc="/logo.png"
+      />
+
+      <Toolbar
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        order={order}
+        setOrder={setOrder}
+      />
+
+      <section className="max-w-6xl mx-auto px-4 pb-10 mt-6">
+        {/* Error */}
+        {isError && (
+          <div className="error-box">
+            <p className="font-semibold">Something went wrong</p>
+            <p className="text-sm opacity-80">{(error as Error).message}</p>
+          </div>
+        )}
+
+        {/* Loading */}
+        {isLoading && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <ProductSkeleton key={i} />
+            ))}
+          </div>
+        )}
+
+        {/* Products */}
+        {!isLoading && !isError && (
+          <>
+            {products.length === 0 ? (
+              <div className="empty-box">
+                <p className="font-semibold">No products found</p>
+                <p className="text-sm text-slate-500">
+                  Try searching with another keyword.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {products.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+            )}
+
+            {/* Infinite scroll trigger */}
+            <div ref={ref} className="h-14 flex items-center justify-center mt-6">
+              {isFetchingNextPage && (
+                <div className="loader-pill">Loading more...</div>
+              )}
+
+              {!hasNextPage && products.length > 0 && (
+                <p className="text-slate-400 text-sm">End of list..</p>
+              )}
+            </div>
+          </>
+        )}
+      </section>
+    </>
   );
 }
